@@ -130,6 +130,7 @@ export default function AudioChapterPlayer() {
       );
 
       const url = URL.createObjectURL(blob);
+
       const a = document.createElement("a");
       a.href = url;
       a.download = `${file.name.split(".")[0]}.m4b`;
@@ -165,8 +166,22 @@ export default function AudioChapterPlayer() {
     setAudiobookAuthor(newAuthor);
   };
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    //React was added here
+    const items = event.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          handleUpdateCover(blob);
+        }
+        break;
+      }
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" onPaste={handlePaste}>
       <div className="flex items-center space-x-4">
         <Input
           type="file"

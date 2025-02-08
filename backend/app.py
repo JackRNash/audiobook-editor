@@ -3,6 +3,7 @@ from io import BytesIO
 import json
 import os
 import sys
+import tempfile
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
@@ -55,15 +56,48 @@ def detect_chapters():
 
 @app.route('/generateChapters', methods=['POST'])
 def generate_chapters():
-    # Stubbed response
-    return jsonify({"message": "generateChapters endpoint"}), 200
+    # Parse table of contents, audio file, and number of silences
+    if not all(key in ['tableOfContents', 'numSilences'] and key in request.form for key in ('tableOfContents', 'numSilences')) or 'audioFile' not in request.files:
+        return jsonify({"error": "tableOfContents, audioFile, and numSilences are required"}), 400
+    
+    audio_file = request.files['audioFile']
+    audio_bytes = audio_file.read()
+    num_silences = int(request.form['numSilences'])
+    table_of_contents = json.loads(request.form['tableOfContents'])
+
+    largest_silences = parser.find_largest_silences(audio_bytes, num_silences)
+
+    # make temporary file
+    with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+        temp_path = temp_file.name
+        temp_file.write(audio_bytes)
+
+    chapters = []
+    chapter_index = 1
+    try:
+        for i, (end) in enumerate(largest_silences, 1):
+            parser.generate_clip(temp_path, end, temp_path)  # Overwrite the same file
+            contains_chapter, chapter = ai.query_gemini(temp_path, table_of_contents)
+            if contains_chapter:
+                print(f"Chapter found: {chapter} ({end})")
+                chapters.append({
+                    'id': chapter_index,
+                    'time': end,
+                    'title': chapter
+                })
+                chapter_index += 1
+    finally:
+        # Clean up the temporary file
+        os.remove(temp_path)
+
+    return jsonify(chapters), 200
 
 @app.route('/exportChapters', methods=['POST'])
 def export_chapters():
     if 'file' not in request.files:
         return jsonify({"error": "file is required"}), 400
-    # if 'thumbnail' not in request.files:
-    #     return jsonify({"error": "thumbnail is required"}), 400
+    if 'thumbnail' not in request.files:
+        return jsonify({"error": "thumbnail is required"}), 400
     if not all(key in request.form for key in ('filename', 'chapters', 'title', 'author')):
         return jsonify({"error": "filename, chapters, title, and author are required"}), 400
 
@@ -76,20 +110,8 @@ def export_chapters():
 
     file_bytes = file.stream.read()
 
-    # Create the "tmp" folder if it doesn't exist
-    tmp_folder = "tmp"
-    os.makedirs(tmp_folder, exist_ok=True)
-
-    # output_file = os.path.join(tmp_folder, f"{filename}.m4b")
     metadata_string = parser.construct_metadata(chapters, title, author, parser.get_audio_length(file_bytes))
-    output_bytes = parser.merge_metadata_with_audio(file_bytes, file.filename, metadata_string, thumbnail.stream.read())
-
-
-    # # Create a response file (stubbed content for now)
-    # response_content = f"Title: {title}\nAuthor: {author}\nChapters: {chapters}\nThumbnail: {thumbnail_path}\n"
-    # response_file = f"{filename}.txt"
-    # with open(response_file, 'w') as f:
-    #     f.write(response_content)
+    output_bytes = parser.merge_metadata_with_audio(file_bytes, metadata_string, thumbnail.stream.read())
 
     output_stream = BytesIO(output_bytes)
     output_stream.seek(0)

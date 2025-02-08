@@ -17,6 +17,7 @@ import {
   FastForward,
 } from "lucide-react";
 import type { Chapter } from "@/lib/chapter-client";
+import { formatTime } from "@/lib/utils";
 
 interface AudioPlayerProps {
   src: string;
@@ -48,11 +49,24 @@ export default function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
 
+    let rafId: number;
+
     const updateTime = () => {
-      const currentTime = audio.currentTime;
-      setCurrentTime(currentTime);
-      onTimeUpdate(currentTime);
+      setCurrentTime(audio.currentTime);
+      onTimeUpdate(audio.currentTime);
+      rafId = requestAnimationFrame(updateTime);
     };
+
+    const handlePlay = () => {
+      setIsPlaying(true);
+      updateTime();
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+      cancelAnimationFrame(rafId);
+    };
+
     const updateDuration = () => setDuration(audio.duration);
 
     audio.addEventListener("timeupdate", updateTime);
@@ -61,6 +75,7 @@ export default function AudioPlayer({
     return () => {
       audio.removeEventListener("timeupdate", updateTime);
       audio.removeEventListener("loadedmetadata", updateDuration);
+      cancelAnimationFrame(rafId);
     };
   }, [audioRef, onTimeUpdate]);
 
@@ -300,10 +315,4 @@ export default function AudioPlayer({
       </div>
     </div>
   );
-}
-
-function formatTime(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.floor(seconds % 60);
-  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }

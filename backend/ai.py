@@ -1,3 +1,4 @@
+import json
 import google.generativeai as genai
 from google.ai.generativelanguage_v1beta.types import content
 
@@ -16,13 +17,8 @@ class AI:
         chapter = response_json.get('chapter')
         return contains_chapter, chapter
 
-    def query_gemini(clip_path, chapters):
+    def query_gemini(self, clip_path, chapters):
         clip = genai.upload_file(path=clip_path)
-        # clip = upload_to_gemini(path='clip_1.mp3')
-        # response = client.models.generate_content(
-        #     model="gemini-2.0-flash",
-        #     contents=["Prologue", clip],
-        # )
 
         # Create the model
         generation_config = {
@@ -54,4 +50,4 @@ class AI:
         
         response = model.generate_content([chapters, clip])
 
-        return parse_gemini_response(response.text)
+        return self.parse_gemini_response(response.text)

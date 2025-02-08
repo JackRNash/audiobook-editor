@@ -95,7 +95,7 @@ def extract_thumbnail(file_bytes):
     finally:
         os.remove(audio_temp_path)
 
-def find_silences(audio_data, sample_rate, silence_threshold, min_silence_len):
+def find_silences(audio_data, silence_threshold, min_silence_len):
     silence_samples = []
     current_silence_start = None
     for i, sample in tqdm(enumerate(audio_data), total=len(audio_data), desc="Finding silences"):
@@ -110,13 +110,13 @@ def find_silences(audio_data, sample_rate, silence_threshold, min_silence_len):
                 current_silence_start = None
     return silence_samples
 
-def find_largest_silences(file_path, num_silences):
-    sample_rate = 16000
+def find_largest_silences(audio_data, num_silences):
+    sample_rate = 16000 # TODO: Get this from the audio file
     silence_threshold = 500  # Adjust this threshold as needed
     min_silence_len = sample_rate  # 1 second of silence
 
-    audio_data = extract_audio_data(file_path)
-    silences = find_silences(audio_data, sample_rate, silence_threshold, min_silence_len)
+    # audio_data = extract_audio_data(file_path)
+    silences = find_silences(audio_data, silence_threshold, min_silence_len)
     
     # Calculate the duration of each silence period
     silence_durations = [(start, end, end - start) for start, end in silences]
@@ -139,52 +139,6 @@ def generate_clip(input_file, timestamp, output_file):
     ]
     subprocess.run(command)
 
-def parse_gemini_response(response):
-    response_json = json.loads(response)
-    contains_chapter = response_json.get('containsChapter')
-    chapter = response_json.get('chapter')
-    return contains_chapter, chapter
-
-def query_gemini(clip_path, chapters):
-    clip = genai.upload_file(path=clip_path)
-    # clip = upload_to_gemini(path='clip_1.mp3')
-    # response = client.models.generate_content(
-    #     model="gemini-2.0-flash",
-    #     contents=["Prologue", clip],
-    # )
-
-    # Create the model
-    generation_config = {
-    "temperature": 1,
-    "top_p": 0.95,
-    "top_k": 40,
-    "max_output_tokens": 8192,
-    "response_schema": content.Schema(
-        type = content.Type.OBJECT,
-        enum = [],
-        required = ["containsChapter"],
-        properties = {
-        "containsChapter": content.Schema(
-            type = content.Type.BOOLEAN,
-        ),
-        "chapter": content.Schema(
-            type = content.Type.STRING,
-        ),
-        },
-    ),
-    "response_mime_type": "application/json",
-    }
-
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        generation_config=generation_config,
-        system_instruction="I will give you an audio snippet and a list of possible chapter titles. You respond in json tell me if one of those chapters is present in the audio clip and if so, which one",
-        )
-    
-    response = model.generate_content([chapters, clip])
-
-    return parse_gemini_response(response.text)
-
 def parse_timestamp(timestamp):
     # hours, minutes, seconds = map(float, timestamp.split(':'))
     # return timedelta(hours=hours, minutes=minutes, seconds=seconds)
@@ -203,7 +157,7 @@ def construct_metadata(chapters, title, author, total_length_placeholder):
 
     return metadata
 
-def merge_metadata_with_audio(input_audio_stream, input_audio_filename, metadata_str, thumbnail_bytes=None):
+def merge_metadata_with_audio(input_audio_stream, metadata_str, thumbnail_bytes=None):
     # Thumbnail present?
     if thumbnail_bytes:
         print('Thumbnail detected')
@@ -292,13 +246,6 @@ if __name__ == "__main__":
     audio_file_path = sys.argv[1]
     num_silences = int(sys.argv[2])
     chapters_file_path = sys.argv[3]
-
-
-
-    # temp_gemini('clip_1.mp3')
-    # timestamps = [('Prologue', '2:18:45.350062'), ('Chapter 1: The Matching Principle', '3:18:45.350062')]
-
-    # write_chapters_to_file(timestamps, 'chapters.txt', '4:00:45.350062')
 
     largest_silences = find_largest_silences(audio_file_path, num_silences)
 

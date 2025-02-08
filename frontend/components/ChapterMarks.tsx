@@ -1,19 +1,20 @@
-"use client"
+"use client";
 
-import { useState, useRef, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Trash2, Clock } from "lucide-react"
-import type { Chapter } from "@/lib/chapter-client"
-import { Input } from "@/components/ui/input"
+import { useState, useRef, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Trash2, Clock } from "lucide-react";
+import type { Chapter } from "@/lib/chapter-client";
+import { Input } from "@/components/ui/input";
+import { formatTime } from "@/lib/utils";
 
 interface ChapterMarksProps {
-  chapters: Chapter[]
-  currentChapter: Chapter | null
-  onEditChapter: (id: string, newTitle: string) => void
-  onEditChapterTime: (id: string, newTime: number) => void
-  onDeleteChapter: (id: string) => void
-  currentAudioTime: number
-  onJumpToChapter: (time: number) => void
+  chapters: Chapter[];
+  currentChapter: Chapter | null;
+  onEditChapter: (id: string, newTitle: string) => void;
+  onEditChapterTime: (id: string, newTime: number) => void;
+  onDeleteChapter: (id: string) => void;
+  currentAudioTime: number;
+  onJumpToChapter: (time: number) => void;
 }
 
 export default function ChapterMarks({
@@ -25,52 +26,55 @@ export default function ChapterMarks({
   currentAudioTime,
   onJumpToChapter,
 }: ChapterMarksProps) {
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editTitle, setEditTitle] = useState("")
-  const [editTime, setEditTime] = useState("")
-  const [editType, setEditType] = useState<"title" | "time">("title")
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editType, setEditType] = useState<"title" | "time">("title");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editingId && inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.select()
+      inputRef.current.focus();
+      inputRef.current.select();
     }
-  }, [editingId])
+  }, [editingId]);
 
   const handleEditClick = (chapter: Chapter, type: "title" | "time") => {
-    setEditingId(chapter.id)
-    setEditTitle(chapter.title)
-    setEditTime(formatTime(chapter.time))
-    setEditType(type)
-  }
+    setEditingId(chapter.id);
+    setEditTitle(chapter.title);
+    setEditTime(formatTime(chapter.time));
+    setEditType(type);
+  };
 
   const handleSaveEdit = () => {
     if (editingId) {
       if (editType === "title") {
-        onEditChapter(editingId, editTitle)
+        onEditChapter(editingId, editTitle);
       } else {
-        const [minutes, seconds] = editTime.split(":").map(Number)
-        const newTime = minutes * 60 + seconds
-        onEditChapterTime(editingId, newTime)
+        const [minutes, seconds] = editTime.split(":").map(Number);
+        const newTime = minutes * 60 + seconds;
+        onEditChapterTime(editingId, newTime);
       }
-      setEditingId(null)
+      setEditingId(null);
     }
-  }
+  };
 
   const handleCancelEdit = () => {
-    setEditingId(null)
-    setEditTitle("")
-    setEditTime("")
-  }
+    setEditingId(null);
+    setEditTitle("");
+    setEditTime("");
+  };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, type: "title" | "time") => {
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    type: "title" | "time"
+  ) => {
     if (e.key === "Enter") {
-      handleSaveEdit()
+      handleSaveEdit();
     } else if (e.key === "Escape") {
-      handleCancelEdit()
+      handleCancelEdit();
     }
-  }
+  };
 
   return (
     <div className="mt-6">
@@ -80,15 +84,17 @@ export default function ChapterMarks({
           <li
             key={chapter.id}
             className={`bg-gray-600 rounded-lg p-3 transition duration-300 ease-in-out ${
-              currentChapter?.id === chapter.id ? "bg-blue-700" : "hover:bg-gray-500"
+              currentChapter?.id === chapter.id
+                ? "bg-blue-600"
+                : "hover:bg-gray-500"
             }`}
           >
             <div className="flex items-center w-full">
               <div
                 className="flex-grow flex items-center cursor-pointer"
                 onClick={(e) => {
-                  e.preventDefault()
-                  onJumpToChapter(chapter.time)
+                  e.preventDefault();
+                  onJumpToChapter(chapter.time);
                 }}
               >
                 {editingId === chapter.id ? (
@@ -111,21 +117,21 @@ export default function ChapterMarks({
                 ) : (
                   <>
                     <span
-                      className="w-16 text-gray-300 cursor-pointer hover:text-white"
+                      className="min-w-[6rem] text-gray-300 cursor-pointer hover:text-white"
                       onClick={(e) => {
-                        e.stopPropagation()
-                        e.preventDefault()
-                        handleEditClick(chapter, "time")
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleEditClick(chapter, "time");
                       }}
                     >
                       {formatTime(chapter.time)}
                     </span>
                     <span
-                      className="text-white cursor-pointer hover:underline ml-2"
+                      className="text-white cursor-pointer hover:underline ml-4"
                       onClick={(e) => {
-                        e.stopPropagation()
-                        e.preventDefault()
-                        handleEditClick(chapter, "title")
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleEditClick(chapter, "title");
                       }}
                     >
                       {chapter.title}
@@ -136,10 +142,20 @@ export default function ChapterMarks({
               <div className="flex items-center space-x-2">
                 {editingId === chapter.id ? (
                   <>
-                    <Button size="sm" onClick={handleSaveEdit} variant="ghost" className="hover:bg-gray-500">
+                    <Button
+                      size="sm"
+                      onClick={handleSaveEdit}
+                      variant="ghost"
+                      className="hover:bg-gray-500"
+                    >
                       Save
                     </Button>
-                    <Button size="sm" onClick={handleCancelEdit} variant="ghost" className="hover:bg-gray-500">
+                    <Button
+                      size="sm"
+                      onClick={handleCancelEdit}
+                      variant="ghost"
+                      className="hover:bg-gray-500"
+                    >
                       Cancel
                     </Button>
                   </>
@@ -148,8 +164,8 @@ export default function ChapterMarks({
                     <Button
                       size="sm"
                       onClick={(e) => {
-                        e.stopPropagation()
-                        onEditChapterTime(chapter.id, currentAudioTime)
+                        e.stopPropagation();
+                        onEditChapterTime(chapter.id, currentAudioTime);
                       }}
                       variant="ghost"
                       className="hover:bg-gray-500"
@@ -159,8 +175,8 @@ export default function ChapterMarks({
                     <Button
                       size="sm"
                       onClick={(e) => {
-                        e.stopPropagation()
-                        onDeleteChapter(chapter.id)
+                        e.stopPropagation();
+                        onDeleteChapter(chapter.id);
                       }}
                       variant="ghost"
                       className="hover:bg-gray-500"
@@ -175,12 +191,5 @@ export default function ChapterMarks({
         ))}
       </ul>
     </div>
-  )
+  );
 }
-
-function formatTime(seconds: number): string {
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = Math.floor(seconds % 60)
-  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
-}
-
