@@ -1,7 +1,10 @@
+from io import BytesIO
 import json
+import logging
 import os
 import sys
 import subprocess
+import tempfile
 import numpy as np
 from datetime import timedelta
 from tqdm import tqdm
@@ -28,8 +31,17 @@ def extract_chapter_headers(file_bytes):
     chapter_headers = []
     current_chapter = {}
     chapter_id = 1
+    title = "Untitled Audiobook"
+    author = "Unknown Author"
+    seen_chapter = False
+    
     for line in metadata.split('\n'):
-        if line.startswith('[CHAPTER]'):
+        if line.startswith('title=') and not seen_chapter:
+            title = line.split('=', 1)[1]
+        elif line.startswith('artist='):
+            author = line.split('=', 1)[1]
+        elif line.startswith('[CHAPTER]'):
+            seen_chapter = True
             if 'title' in current_chapter and 'start' in current_chapter:
                 chapter_headers.append({
                     'id': str(chapter_id),
@@ -56,7 +68,32 @@ def extract_chapter_headers(file_bytes):
             'title': current_chapter['title']
         })
     
-    return chapter_headers
+    return {
+        "chapters": chapter_headers,
+        "title": title,
+        "author": author
+    }
+
+def extract_thumbnail(file_bytes):
+    with tempfile.NamedTemporaryFile(delete=False) as audio_temp:
+        audio_temp.write(file_bytes)
+        audio_temp.flush()
+        audio_temp_path = audio_temp.name
+
+    try:
+        command = [
+            'ffmpeg', '-y', '-i', audio_temp_path, '-an', '-vcodec', 'copy', '-f', 'image2', 'pipe:1'
+        ]
+        
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            raise RuntimeError(f"FFmpeg error: {stderr.decode('utf-8')}")
+        
+        return stdout
+    finally:
+        os.remove(audio_temp_path)
 
 def find_silences(audio_data, sample_rate, silence_threshold, min_silence_len):
     silence_samples = []
@@ -149,26 +186,78 @@ def query_gemini(clip_path, chapters):
     return parse_gemini_response(response.text)
 
 def parse_timestamp(timestamp):
-    hours, minutes, seconds = map(float, timestamp.split(':'))
-    return timedelta(hours=hours, minutes=minutes, seconds=seconds)
+    # hours, minutes, seconds = map(float, timestamp.split(':'))
+    # return timedelta(hours=hours, minutes=minutes, seconds=seconds)
+    seconds = float(timestamp)
+    return timedelta(seconds=seconds)
 
-def write_chapters_to_file(chapters, output_file, total_length_placeholder):
-    with open(output_file, 'w') as f:
-        # f.write("[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\n")
-        for i, (chapter, timestamp) in enumerate(chapters):
-            start = int(parse_timestamp("0:0:0.0").total_seconds() * 1000) if i == 0 else int(parse_timestamp(timestamp).total_seconds() * 1000)
-            end = int(parse_timestamp(chapters[i+1][1]).total_seconds() * 1000) if i < len(chapters) - 1 else int(parse_timestamp(total_length_placeholder).total_seconds() * 1000)
-            f.write(f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}\ntitle={chapter}\n\n")
-        # f.write(f"END={total_length_placeholder}\ntitle={chapters[-1][0]}\n")
+def construct_metadata(chapters, title, author, total_length_placeholder):
+    metadata = ";FFMETADATA1\n"
+    metadata += f"title={title}\n"
+    metadata += f"artist={author}\n\n"
 
-def get_audio_length(file_path):
+    for i, chapter in enumerate(chapters):
+        start = 0 if i == 0 else int(parse_timestamp(chapter['time']).total_seconds() * 1000)
+        end = int(parse_timestamp(chapters[i+1]['time']).total_seconds() * 1000) if i < len(chapters) - 1 else int(total_length_placeholder.total_seconds() * 1000)
+        metadata += f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}\ntitle={chapter['title']}\n\n"
+
+    return metadata
+
+# Configure logging
+
+def merge_metadata_with_audio(input_audio_stream, input_audio_filename, metadata_str):
+    input_extension = os.path.splitext(input_audio_filename)[1].lower()
+
+    # convert the input metadata stream to text and print it
+    # input_metadata_text = metadata_bytes.decode('utf-8')
+    # print(input_metadata_text)
+    
+    with tempfile.NamedTemporaryFile(delete=False) as audio_temp, tempfile.NamedTemporaryFile(delete=False) as metadata_temp, tempfile.NamedTemporaryFile(delete=False, suffix='.m4b') as output_temp:
+        audio_temp.write(input_audio_stream)
+        metadata_temp.write(metadata_str.encode('utf-8'))
+        audio_temp.flush()
+        metadata_temp.flush()
+        
+        audio_temp_path = audio_temp.name
+        metadata_temp_path = metadata_temp.name
+        output_temp_path = output_temp.name
+    
+    try:
+        if input_extension == '.m4b':
+            # For M4B files, we can avoid transcoding and just copy the audio stream
+            logging.debug('Skipping transcoding...')
+            command = [
+                'ffmpeg', '-y', '-i', audio_temp_path, '-i', metadata_temp_path, '-map', '0:a', '-map_metadata', '1', '-map_chapters', '1', '-c', 'copy', output_temp_path
+            ]
+        else:
+            command = [
+                'ffmpeg', '-y', '-i', audio_temp_path, '-i', metadata_temp_path, '-map', '0:a', '-map_metadata', '1', '-map_chapters', '1', output_temp_path
+            ]
+        
+        command_str = ' '.join(command)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            raise RuntimeError(f"FFmpeg error: {stderr.decode('utf-8')}")
+        
+        with open(output_temp_path, 'rb') as f:
+            output_bytes = f.read()
+        
+        return output_bytes
+    finally:
+        os.remove(audio_temp_path)
+        os.remove(metadata_temp_path)
+        os.remove(output_temp_path)
+
+def get_audio_length(file_bytes):
     command = [
-        'ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file_path
+        'ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', 'pipe:0'
     ]
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, _ = process.communicate()
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, _ = process.communicate(input=file_bytes)
     duration_seconds = float(stdout.strip())
-    return str(timedelta(seconds=duration_seconds))
+    return timedelta(seconds=duration_seconds)
 
 if __name__ == "__main__":
     if len(sys.argv) != 4:
@@ -204,6 +293,6 @@ if __name__ == "__main__":
                 timestamps.append((chapter, end))
     
     # Write the chapters to a file
-    write_chapters_to_file(timestamps, 'output.txt', get_audio_length(audio_file_path))
+    construct_metadata(timestamps, 'output.txt', get_audio_length(audio_file_path))
     
 

@@ -4,19 +4,16 @@ export interface Chapter {
   title: string
 }
 
+export interface ChapterResponse {
+  chapters: Chapter[]
+  title: string
+  author: string
+  thumbnail?: string
+}
+
+
 class ChapterClient {
-  // async loadChapters(): Promise<Chapter[]> {
-  //   // Simulating an API call with a delay
-  //   await new Promise((resolve) => setTimeout(resolve, 500))
-  //   return [
-  //     { id: "1", time: 0, title: "Introduction" },
-  //     { id: "2", time: 5, title: "Chapter 1" },
-  //     { id: "3", time: 8, title: "Chapter 2" },
-  //     { id: "4", time: 30, title: "Chapter 3" },
-  //     { id: "5", time: 40, title: "Conclusion" },
-  //   ]
-  // }
-  async loadChapters(audioFile: File): Promise<Chapter[]> {
+  async loadChapters(audioFile: File): Promise<ChapterResponse> {
     const formData = new FormData();
     formData.append('audiobook', audioFile);
 
@@ -30,9 +27,13 @@ class ChapterClient {
     }
 
     const data = await response.json();
-    return data.chapters;
+    return {
+      chapters: data.chapters,
+      title: data.title,
+      author: data.author,
+      thumbnail: data.thumbnail,
+    };
   }
-
   async generateChapters(): Promise<Chapter[]> {
     // Simulating an API call with a delay
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -45,10 +46,27 @@ class ChapterClient {
     ]
   }
 
-  async exportChapters(chapters: Chapter[]): Promise<string> {
-    // Simulating an API call with a delay
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    return "This is a dummy export file for the audiobook chapters."
+  async exportChapters(file: File, filename: string, chapters: Chapter[], title: string, author: string, thumbnail?: File): Promise<Blob> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('filename', filename);
+    formData.append('chapters', JSON.stringify(chapters));
+    formData.append('title', title);
+    formData.append('author', author);
+    if (thumbnail) {
+      formData.append('thumbnail', thumbnail);
+    }
+
+    const response = await fetch('http://127.0.0.1:8089/exportChapters', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to export chapters');
+    }
+
+    return await response.blob();
   }
 }
 
