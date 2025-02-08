@@ -118,6 +118,7 @@ export default function AudiobookMetadata({
             />
           ) : (
             <p className="text-lg text-gray-300 flex items-center">
+              <span className="mr-2">by</span>
               {author}
               <Button
                 size="sm"

@@ -8,6 +8,7 @@ import ChapterMarks from "./ChapterMarks";
 import { Upload, Wand2, Download } from "lucide-react";
 import { chapterClient, type Chapter } from "@/lib/chapter-client";
 import AudiobookMetadata from "./AudiobookMetadata";
+import TextInputModal from "./TextInputModal";
 
 export default function AudioChapterPlayer() {
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export default function AudioChapterPlayer() {
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [audiobookTitle, setAudiobookTitle] = useState("Untitled Audiobook");
   const [audiobookAuthor, setAudiobookAuthor] = useState("Unknown Author");
+  const [isTextModalOpen, setIsTextModalOpen] = useState(false);
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -37,6 +39,8 @@ export default function AudioChapterPlayer() {
         if (newChapters.thumbnail) {
           const thumbnailUrl = `data:image/jpeg;base64,${newChapters.thumbnail}`;
           setCoverUrl(thumbnailUrl);
+        } else {
+          setCoverUrl(null); // Reset the cover image
         }
       } catch (error) {
         console.error("Error loading chapters:", error);
@@ -49,9 +53,15 @@ export default function AudioChapterPlayer() {
 
   const handleGenerate = async () => {
     if (audioSrc) {
+      setIsTextModalOpen(true);
+    }
+  };
+
+  const handleTextSubmit = async (text: string) => {
+    if (audioSrc) {
       setIsLoading(true);
       try {
-        const newChapters = await chapterClient.generateChapters();
+        const newChapters = await chapterClient.generateChapters(text);
         setChapters(newChapters);
         setCurrentChapter(newChapters[0]);
       } catch (error) {
@@ -204,7 +214,7 @@ export default function AudioChapterPlayer() {
           disabled={isLoading || !audioSrc}
         >
           <Wand2 className="w-5 h-5 mr-2" />
-          Generate
+          Generate Chapters
         </Button>
       </div>
       {audioSrc && (
@@ -245,6 +255,11 @@ export default function AudioChapterPlayer() {
           </Button>
         </div>
       )}
+      <TextInputModal
+        isOpen={isTextModalOpen}
+        onClose={() => setIsTextModalOpen(false)}
+        onSubmit={handleTextSubmit}
+      />
     </div>
   );
 }

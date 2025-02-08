@@ -182,14 +182,14 @@ export default function AudioPlayer({
     <div className="space-y-4">
       <audio ref={audioRef} src={src} />
       {currentChapter && (
-        <div className="flex items-center justify-between text-lg font-semibold text-white bg-gray-600 rounded-lg p-2">
+        <div className="flex items-center justify-between text-lg font-semibold text-white bg-gray-600 rounded-lg p-2 max-w-[600px] mx-auto">
           {isEditing ? (
             <Input
               ref={inputRef}
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="flex-grow mr-2 bg-gray-700 text-white"
+              className="mr-2 bg-gray-700 text-white"
               onFocus={(e) => e.target.select()}
             />
           ) : (

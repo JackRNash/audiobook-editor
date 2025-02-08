@@ -76,7 +76,7 @@ class ChapterClient {
       thumbnail: data.thumbnail,
     };
   }
-  async generateChapters(): Promise<Chapter[]> {
+  async generateChapters(text: string): Promise<Chapter[]> {
     // Simulating an API call with a delay
     await new Promise((resolve) => setTimeout(resolve, 1000))
     return [
