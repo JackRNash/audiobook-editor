@@ -74,7 +74,7 @@ export default function AudiobookMetadata({
         <Button
           size="sm"
           variant="secondary"
-          className="absolute bottom-2 right-2"
+          className="absolute bottom-2 right-2 opacity-50 hover:opacity-100 transition-opacity duration-200"
           onClick={() => fileInputRef.current?.click()}
         >
           <Upload className="w-4 h-4 mr-2" />

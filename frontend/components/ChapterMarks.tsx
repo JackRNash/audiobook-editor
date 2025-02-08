@@ -83,7 +83,11 @@ export default function ChapterMarks({
         {chapters.map((chapter) => (
           <li
             key={chapter.id}
-            className={`bg-gray-600 rounded-lg p-3 transition duration-300 ease-in-out ${
+            onClick={(e) => {
+              e.preventDefault();
+              onJumpToChapter(chapter.time);
+            }}
+            className={`bg-gray-600 rounded-lg p-3 transition duration-300 ease-in-out cursor-pointer ${
               currentChapter?.id === chapter.id
                 ? "bg-blue-600"
                 : "hover:bg-gray-500"
@@ -103,7 +107,7 @@ export default function ChapterMarks({
                       value={editTime}
                       onChange={(e) => setEditTime(e.target.value)}
                       onKeyDown={(e) => handleKeyDown(e, "time")}
-                      className="w-16 mr-2 bg-gray-700 text-white"
+                      className="min-w-[6rem] w-16 mr-2 bg-gray-700 text-white"
                       onClick={(e) => e.stopPropagation()}
                     />
                     <Input
@@ -120,7 +124,6 @@ export default function ChapterMarks({
                       className="min-w-[6rem] text-gray-300 cursor-pointer hover:text-white"
                       onClick={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
                         handleEditClick(chapter, "time");
                       }}
                     >
@@ -130,7 +133,6 @@ export default function ChapterMarks({
                       className="text-white cursor-pointer hover:underline ml-4"
                       onClick={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
                         handleEditClick(chapter, "title");
                       }}
                     >
