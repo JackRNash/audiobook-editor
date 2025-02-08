@@ -68,7 +68,7 @@ def export_chapters():
         return jsonify({"error": "filename, chapters, title, and author are required"}), 400
 
     file = request.files['file']
-    # thumbnail = request.files['thumbnail']
+    thumbnail = request.files['thumbnail']
     filename = request.form['filename'] # TODO: remove can use file.filename??
     chapters = json.loads(request.form['chapters'])
     title = request.form['title']
@@ -82,11 +82,8 @@ def export_chapters():
 
     # output_file = os.path.join(tmp_folder, f"{filename}.m4b")
     metadata_string = parser.construct_metadata(chapters, title, author, parser.get_audio_length(file_bytes))
-    output_bytes = parser.merge_metadata_with_audio(file_bytes, file.filename, metadata_string)
+    output_bytes = parser.merge_metadata_with_audio(file_bytes, file.filename, metadata_string, thumbnail.stream.read())
 
-    # # Save the thumbnail image
-    # thumbnail_path = os.path.join('thumbnails', thumbnail.filename)
-    # thumbnail.save(thumbnail_path)
 
     # # Create a response file (stubbed content for now)
     # response_content = f"Title: {title}\nAuthor: {author}\nChapters: {chapters}\nThumbnail: {thumbnail_path}\n"

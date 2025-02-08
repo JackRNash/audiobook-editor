@@ -203,14 +203,12 @@ def construct_metadata(chapters, title, author, total_length_placeholder):
 
     return metadata
 
-# Configure logging
-
-def merge_metadata_with_audio(input_audio_stream, input_audio_filename, metadata_str):
-    input_extension = os.path.splitext(input_audio_filename)[1].lower()
-
-    # convert the input metadata stream to text and print it
-    # input_metadata_text = metadata_bytes.decode('utf-8')
-    # print(input_metadata_text)
+def merge_metadata_with_audio(input_audio_stream, input_audio_filename, metadata_str, thumbnail_bytes=None):
+    # Thumbnail present?
+    if thumbnail_bytes:
+        print('Thumbnail detected')
+    else:
+        print('No thumbnail detected')
     
     with tempfile.NamedTemporaryFile(delete=False) as audio_temp, tempfile.NamedTemporaryFile(delete=False) as metadata_temp, tempfile.NamedTemporaryFile(delete=False, suffix='.m4b') as output_temp:
         audio_temp.write(input_audio_stream)
@@ -223,18 +221,43 @@ def merge_metadata_with_audio(input_audio_stream, input_audio_filename, metadata
         output_temp_path = output_temp.name
     
     try:
-        if input_extension == '.m4b':
-            # For M4B files, we can avoid transcoding and just copy the audio stream
-            logging.debug('Skipping transcoding...')
-            command = [
-                'ffmpeg', '-y', '-i', audio_temp_path, '-i', metadata_temp_path, '-map', '0:a', '-map_metadata', '1', '-map_chapters', '1', '-c', 'copy', output_temp_path
-            ]
-        else:
-            command = [
-                'ffmpeg', '-y', '-i', audio_temp_path, '-i', metadata_temp_path, '-map', '0:a', '-map_metadata', '1', '-map_chapters', '1', output_temp_path
-            ]
+        # if input_extension == '.m4b':
+        # For M4B files, we can avoid transcoding and just copy the audio stream
+        command = [
+            'ffmpeg', '-y',
+            '-i', audio_temp_path,
+            '-i', metadata_temp_path
+        ]
         
-        command_str = ' '.join(command)
+        if thumbnail_bytes:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as cover_temp_file:
+                cover_temp_file.write(thumbnail_bytes)
+                cover_temp_file.flush()
+                cover_temp_path = cover_temp_file.name
+                command.extend(['-i', cover_temp_path])
+
+        # Base mapping and codec options
+        command.extend([
+            '-map', '0:a',  # Map audio from first input
+            '-map_metadata', '1',  # Map metadata from second input
+            '-map_chapters', '1'  # Map chapters from second input
+        ])
+
+        if thumbnail_bytes:
+            command.extend([
+                '-map', '2',  # Map image from third input
+                '-disposition:v', 'attached_pic',  # Set as cover art
+                '-metadata:s:v', 'title="Album cover"',
+                '-metadata:s:v', 'comment="Cover (front)"'
+            ])
+
+        # Output options
+        command.extend([
+            '-c:a', 'copy',  # Copy audio codec
+            '-c:v', 'mjpeg' if thumbnail_bytes else 'copy',  # Use MJPEG for cover
+            output_temp_path
+        ])
+        
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
         
@@ -249,6 +272,8 @@ def merge_metadata_with_audio(input_audio_stream, input_audio_filename, metadata
         os.remove(audio_temp_path)
         os.remove(metadata_temp_path)
         os.remove(output_temp_path)
+        if 'cover_temp_path' in locals():
+            os.remove(cover_temp_path)
 
 def get_audio_length(file_bytes):
     command = [
