@@ -16,6 +16,8 @@ import backend.parser as parser
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+ai = None
+
 @app.after_request
 def add_cors_headers(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -57,39 +59,63 @@ def detect_chapters():
 @app.route('/generateChapters', methods=['POST'])
 def generate_chapters():
     # Parse table of contents, audio file, and number of silences
-    if not all(key in ['tableOfContents', 'numSilences'] and key in request.form for key in ('tableOfContents', 'numSilences')) or 'audioFile' not in request.files:
-        return jsonify({"error": "tableOfContents, audioFile, and numSilences are required"}), 400
+    if not all(key in ['tableOfContents', 'numSilences', 'sampleRate'] and key in request.form for key in ('tableOfContents', 'numSilences')) or 'audioFile' not in request.files:
+        return jsonify({"error": "tableOfContents, audioFile, sampleRate, and numSilences are required"}), 400
     
     audio_file = request.files['audioFile']
     audio_bytes = audio_file.read()
     num_silences = int(request.form['numSilences'])
     table_of_contents = json.loads(request.form['tableOfContents'])
+    sample_rate = int(request.form['sampleRate'])
 
-    largest_silences = parser.find_largest_silences(audio_bytes, num_silences)
+    print(f'Sample rate: {sample_rate}')
+    print(f'Number of silences: {num_silences}')
+    file_extension = os.path.splitext(audio_file.filename)[1]
 
     # make temporary file
-    with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
-        temp_path = temp_file.name
-        temp_file.write(audio_bytes)
-
-    chapters = []
-    chapter_index = 1
+    with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as audiobook_file:
+        audiobook_path = audiobook_file.name
+        audiobook_file.write(audio_bytes)
     try:
+        # Add some extra silences to account for potential missed silences
+        largest_silences = parser.find_largest_silences(audio_bytes, num_silences + 8, sample_rate, audiobook_path)
+        print(f"Found {len(largest_silences)} largest silences")
+
+
+        chapters = []
+        chapter_index = 1
+
+        if ai is None:
+            print("No AI model found, using default chapter titles")
+
+        # Create a separate temp file for each clip
+        clip_file = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False)
+        clip_path = clip_file.name
+        clip_file.close()
+
         for i, (end) in enumerate(largest_silences, 1):
-            parser.generate_clip(temp_path, end, temp_path)  # Overwrite the same file
-            contains_chapter, chapter = ai.query_gemini(temp_path, table_of_contents)
-            if contains_chapter:
-                print(f"Chapter found: {chapter} ({end})")
+            if ai is None:
                 chapters.append({
-                    'id': chapter_index,
-                    'time': end,
-                    'title': chapter
-                })
-                chapter_index += 1
+                        'id': str(chapter_index),
+                        'time': float(parser.parse_timestamp_from_hhmmssxx(end).total_seconds()), 
+                        'title': f'Chapter {chapter_index}'
+                    })
+            else:
+                parser.generate_clip(audiobook_path, end, clip_path)  # Overwrite the same file
+                contains_chapter, chapter = ai.query_gemini(clip_path, table_of_contents)
+                if contains_chapter:
+                    print(f"Chapter found: {chapter} ({end})")
+                    chapters.append({
+                        'id': str(chapter_index),
+                        'time': float(parser.parse_timestamp_from_hhmmssxx(end).total_seconds()),
+                        'title': chapter
+                    })
+            chapter_index += 1
     finally:
         # Clean up the temporary file
-        os.remove(temp_path)
+        os.remove(audiobook_path)
 
+    print(f"Chapters: {chapters}")
     return jsonify(chapters), 200
 
 @app.route('/exportChapters', methods=['POST'])
@@ -121,12 +147,11 @@ def export_chapters():
 
     return send_file(output_stream, as_attachment=True, download_name=download_name, mimetype="audio/m4b")
 
-if __name__ == '__main__':
-    print("Starting server...")
-    gemini_api_key = os.getenv('GEMINI_API_KEY')
-    if not gemini_api_key:
-        print("GEMINI_API_KEY environment variable not set")
-    else:
-        print("GEMINI_API_KEY found")
+print("Starting server...")
+gemini_api_key = os.getenv('GEMINI_API_KEY')
+if not gemini_api_key:
+    print("GEMINI_API_KEY environment variable not set")
+else:
+    print("GEMINI_API_KEY found")
     ai = AI(gemini_api_key)
-    app.run(port=8089, debug=True)
+app.run(port=8089, debug=True)

@@ -14,6 +14,7 @@ import {
   Check,
   X,
   Rewind,
+  Plus,
   FastForward,
 } from "lucide-react";
 import type { Chapter } from "@/lib/chapter-client";
@@ -26,6 +27,7 @@ interface AudioPlayerProps {
   onTimeUpdate: (time: number) => void;
   onEditChapter: (id: string, newTitle: string) => void;
   onDeleteChapter: (id: string) => void;
+  onAddChapter: () => void;
   audioRef: RefObject<HTMLAudioElement>;
 }
 
@@ -36,6 +38,7 @@ export default function AudioPlayer({
   onTimeUpdate,
   onEditChapter,
   onDeleteChapter,
+  onAddChapter,
   audioRef,
 }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -181,63 +184,74 @@ export default function AudioPlayer({
   return (
     <div className="space-y-4">
       <audio ref={audioRef} src={src} />
-      {currentChapter && (
-        <div className="flex items-center justify-between text-lg font-semibold text-white bg-gray-600 rounded-lg p-2 max-w-[600px] mx-auto">
-          {isEditing ? (
-            <Input
-              ref={inputRef}
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="mr-2 bg-gray-700 text-white"
-              onFocus={(e) => e.target.select()}
-            />
-          ) : (
-            <span>{currentChapter.title}</span>
-          )}
-          <div className="flex space-x-2">
+      <div className="flex items-center justify-center gap-3">
+        {currentChapter && (
+          <div className="flex-1 flex items-center justify-between text-lg font-semibold text-white bg-gray-600 rounded-lg p-2 max-w-[600px]">
             {isEditing ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleSaveEdit}
-                  className="hover:bg-gray-500"
-                >
-                  <Check className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleCancelEdit}
-                  className="hover:bg-gray-500"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </>
+              <Input
+                ref={inputRef}
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="mr-2 bg-gray-700 text-white"
+                onFocus={(e) => e.target.select()}
+              />
             ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleEditClick}
-                  className="hover:bg-gray-500"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onDeleteChapter(currentChapter.id)}
-                  className="hover:bg-gray-500"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </>
+              <span>{currentChapter.title}</span>
             )}
+            <div className="flex space-x-2">
+              {isEditing ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleSaveEdit}
+                    className="hover:bg-gray-500"
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleCancelEdit}
+                    className="hover:bg-gray-500"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleEditClick}
+                    className="hover:bg-gray-500"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onDeleteChapter(currentChapter.id)}
+                    className="hover:bg-gray-500"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onAddChapter}
+          className="bg-gray-600 hover:bg-gray-500 text-white px-2 rounded-lg whitespace-nowrap h-[42px]"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          New Chapter
+        </Button>
+      </div>
       <div className="flex items-center justify-center space-x-4">
         <Button
           size="icon"

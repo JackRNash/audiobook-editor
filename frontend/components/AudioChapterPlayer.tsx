@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, type ChangeEvent } from "react";
+import { useState, useRef, type ChangeEvent, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import AudioPlayer from "./AudioPlayer";
@@ -22,6 +22,21 @@ export default function AudioChapterPlayer() {
   const [audiobookTitle, setAudiobookTitle] = useState("Untitled Audiobook");
   const [audiobookAuthor, setAudiobookAuthor] = useState("Unknown Author");
   const [isTextModalOpen, setIsTextModalOpen] = useState(false);
+
+  const getSampleRate = async (audioRef: RefObject<HTMLAudioElement>): Promise<number> => {
+    // Create a temporary audio context to get the real sample rate
+    if (!audioRef.current) {
+      throw new Error('Audio element is not available');
+    }
+    // Create audio context after audio is loaded
+    const audioContext = new (window.AudioContext)();
+    const source = audioContext.createMediaElementSource(audioRef.current);
+    source.connect(audioContext.destination); // Connect to speakers
+    const sampleRate = audioContext.sampleRate;
+    console.log(`Duration: ${audioRef.current.duration}s`);
+    console.log(`Sample Rate: ${sampleRate}Hz`);
+    return sampleRate;
+  };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -61,11 +76,28 @@ export default function AudioChapterPlayer() {
     if (audioSrc) {
       setIsLoading(true);
       try {
-        const newChapters = await chapterClient.generateChapters(text);
+        const file = await fetch(audioSrc).then((r) => r.blob());
+        const audioFile = new File([file], "audiobook.mp3", {
+          type: "audio/mpeg",
+        });
+        const numChapters = text
+          .split("\n")
+          .filter((line) => line.trim()).length;
+        console.log("Chapters: ", numChapters);
+        const sampleRate = await getSampleRate(audioRef);
+
+        const newChapters = await chapterClient.generateChapters(
+          text,
+          audioFile,
+          numChapters,
+          sampleRate
+        );
         setChapters(newChapters);
         setCurrentChapter(newChapters[0]);
       } catch (error) {
         console.error("Error generating chapters:", error);
+        setChapters([]); // Set empty array as fallback
+        setCurrentChapter(null);
         // Handle error (e.g., show an error message to the user)
       } finally {
         setIsLoading(false);
@@ -112,6 +144,29 @@ export default function AudioChapterPlayer() {
       return prev;
     });
     setCurrentChapter(newCurrentChapter);
+  };
+
+  const handleAddChapter = () => {
+    const currentTime = audioRef.current?.currentTime || 0;
+    const newChapter: Chapter = {
+      id: crypto.randomUUID(),
+      title: "New Chapter",
+      time: currentTime,
+    };
+
+    const updatedChapters = [...chapters];
+    const insertIndex = updatedChapters.findIndex(
+      (chapter) => chapter.time > currentTime
+    );
+
+    if (insertIndex === -1) {
+      updatedChapters.push(newChapter);
+    } else {
+      updatedChapters.splice(insertIndex, 0, newChapter);
+    }
+
+    setChapters(updatedChapters);
+    setCurrentChapter(newChapter);
   };
 
   const handleExport = async () => {
@@ -235,6 +290,7 @@ export default function AudioChapterPlayer() {
             onEditChapter={handleEditChapter}
             onDeleteChapter={handleDeleteChapter}
             audioRef={audioRef}
+            onAddChapter={handleAddChapter}
           />
           <ChapterMarks
             chapters={chapters}

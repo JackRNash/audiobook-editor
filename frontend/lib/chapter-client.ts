@@ -11,49 +11,6 @@ export interface ChapterResponse {
   thumbnail?: string
 }
 
-class MockChapterClient implements ChapterClient {
-  async loadChapters(audioFile: File): Promise<ChapterResponse> {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    return {
-      chapters: [
-        { id: "1", time: 0, title: "Mock Chapter 1" },
-        { id: "2", time: 300, title: "Mock Chapter 2" },
-        { id: "3", time: 600, title: "Mock Chapter 3" },
-      ],
-      title: "Mock Audiobook",
-      author: "Mock Author",
-      thumbnail: undefined
-    };
-  }
-
-  async generateChapters(): Promise<Chapter[]> {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return [
-      { id: "1", time: 0, title: "Generated Intro" },
-      { id: "2", time: 10, title: "Generated Chapter 1" },
-      { id: "3", time: 20, title: "Generated Chapter 2" },
-      { id: "4", time: 30, title: "Generated Chapter 3" },
-      { id: "5", time: 40, title: "Generated Conclusion" },
-    ];
-  }
-
-  async exportChapters(
-    file: File, 
-    filename: string, 
-    chapters: Chapter[], 
-    title: string, 
-    author: string, 
-    thumbnail?: File
-  ): Promise<Blob> {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    // Create a mock M4B file (actually just a text file for demonstration)
-    const mockContent = JSON.stringify({ file, filename, chapters, title, author }, null, 2);
-    return new Blob([mockContent], { type: 'audio/m4b' });
-  }
-}
-
 class ChapterClient {
   async loadChapters(audioFile: File): Promise<ChapterResponse> {
     const formData = new FormData();
@@ -76,16 +33,51 @@ class ChapterClient {
       thumbnail: data.thumbnail,
     };
   }
-  async generateChapters(text: string): Promise<Chapter[]> {
-    // Simulating an API call with a delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    return [
-      { id: "1", time: 0, title: "Generated Intro" },
-      { id: "2", time: 10, title: "Generated Chapter 1" },
-      { id: "3", time: 20, title: "Generated Chapter 2" },
-      { id: "4", time: 30, title: "Generated Chapter 3" },
-      { id: "5", time: 40, title: "Generated Conclusion" },
-    ]
+
+  async generateChapters(text: string, audioFile: File, numSilences: number, sampleRate: number): Promise<Chapter[]> {
+    const formData = new FormData();
+    formData.append('tableOfContents', JSON.stringify(text.split('\n').filter(line => line.trim())));
+    formData.append('audioFile', audioFile);
+    formData.append('numSilences', numSilences.toString());
+    formData.append('sampleRate', sampleRate.toString());
+
+    // if 0 silences, throw an error
+    if (numSilences === 0) {
+      throw new Error('Number of silences must be greater than 0');
+    }
+
+    try {
+      const response = await fetch('http://127.0.0.1:8089/generateChapters', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate chapters');
+      }
+
+      const data = await response.json();
+      console.log('Server response:', data);
+
+      if (!Array.isArray(data)) {
+        throw new Error('Invalid response format: expected array of chapters');
+      }
+
+      // Validate each chapter object
+      const chapters = data.map((chapter: any) => ({
+        id: String(chapter.id),
+        time: Number(chapter.time),
+        title: String(chapter.title)
+      }));
+
+      console.log('Processed chapters:', chapters);
+      return chapters;
+
+    } catch (error) {
+      console.error('Error in generateChapters:', error);
+      throw error;
+    }
   }
 
   async exportChapters(file: File, filename: string, chapters: Chapter[], title: string, author: string, thumbnail?: File): Promise<Blob> {

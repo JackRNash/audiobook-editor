@@ -2,9 +2,11 @@ from io import BytesIO
 import json
 import logging
 import os
+import re
 import sys
 import subprocess
 import tempfile
+from typing import List, Tuple
 import numpy as np
 from datetime import timedelta
 from tqdm import tqdm
@@ -80,6 +82,23 @@ def extract_thumbnail(file_bytes):
         audio_temp.flush()
         audio_temp_path = audio_temp.name
 
+    # First, check if there's any video/image stream
+        probe_command = [
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=codec_type',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            audio_temp_path
+        ]
+        
+        probe_process = subprocess.Popen(probe_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        probe_stdout, _ = probe_process.communicate()
+        
+        # If there's no video stream, return None
+        if not probe_stdout.strip():
+            return None
+
+    # If we found a video stream, try to extract it
     try:
         command = [
             'ffmpeg', '-y', '-i', audio_temp_path, '-an', '-vcodec', 'copy', '-f', 'image2', 'pipe:1'
@@ -95,41 +114,166 @@ def extract_thumbnail(file_bytes):
     finally:
         os.remove(audio_temp_path)
 
+def detect_silences(audio_path: str, noise_threshold_db: float = -60, min_silence_duration: float = 1) -> List[Tuple[float, float]]:
+    """
+    Detect silent periods from a byte stream using ffmpeg's silencedetect filter.
+    """
+    
+    # Construct the ffmpeg command
+    cmd = [
+        'ffmpeg',
+        '-i', audio_path,
+        '-acodec', 'pcm_s16le',  # Convert to raw PCM first
+        '-af', f'silencedetect=noise={noise_threshold_db}dB:d={min_silence_duration}',
+        '-f', 'null',
+        '-'
+    ]
+    
+    # Run ffmpeg command and capture stderr output
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False
+        )
+        _, stderr = process.communicate()
+    except subprocess.CalledProcessError as e:
+        print(f"Error running ffmpeg: {e.stderr}")
+        raise
+    
+    # Parse the output to find silence start and end times
+    silence_periods = []
+    
+    stderr_str = stderr.decode("utf-8", errors="ignore")
+        
+    # Regular expressions to match silence_start and silence_end lines
+    start_pattern = r'silence_start: (\d+\.?\d*)'
+    end_pattern = r'silence_end: (\d+\.?\d*)'
+    
+    # Find all silence starts and ends
+    starts = [float(x) for x in re.findall(start_pattern, stderr_str)]
+    ends = [float(x) for x in re.findall(end_pattern, stderr_str)]
+    
+    # Pair up the starts and ends
+    silence_periods = list(zip(starts, ends))
+
+    print(f"Found {len(silence_periods)} silence periods")
+    print(f"First 10: {silence_periods[:10]}")
+    
+    return silence_periods
+
 def find_silences(audio_data, silence_threshold, min_silence_len):
+    # Ensure the buffer size is a multiple of 2 (16 bits = 2 bytes)
+    buffer_length = len(audio_data)
+    if buffer_length % 2 != 0:
+        print(f"Warning: Truncating buffer from {buffer_length} to {buffer_length - 1} bytes")
+        audio_data = audio_data[:-1]
+    
+    # Convert bytes to numpy array
+    try:
+        audio_array = np.frombuffer(audio_data, dtype=np.int16)
+        print(f"Converted {len(audio_data)} bytes to {len(audio_array)} samples")
+    except ValueError as e:
+        print(f"Error converting audio data: {e}")
+        print(f"Audio data length: {len(audio_data)} bytes")
+        raise
+
+    # Normalize audio data to float between -1 and 1
+    audio_data = audio_array.astype(np.float32) / 32768.0
+    
+    # Process in chunks to improve performance
+    chunk_size = 1024
     silence_samples = []
     current_silence_start = None
-    for i, sample in tqdm(enumerate(audio_data), total=len(audio_data), desc="Finding silences"):
-        if abs(sample) < silence_threshold:
+    min_chunk_silence_len = int(min_silence_len / chunk_size)
+    print (f"Minimum chunk silence length: {min_chunk_silence_len} chunks")
+    
+    for i in tqdm(range(0, len(audio_data), chunk_size), desc="Finding silences"):
+        chunk = audio_data[i:i + chunk_size]
+
+        avg_amplitude = np.mean(np.abs(chunk))
+        
+        if avg_amplitude < silence_threshold:
             if current_silence_start is None:
                 current_silence_start = i
         else:
             if current_silence_start is not None:
                 silence_duration = i - current_silence_start
-                if silence_duration >= min_silence_len:
+                if ((i - current_silence_start) // chunk_size) >= min_chunk_silence_len:
+                    print(f"Silence from {current_silence_start} to {i}")
                     silence_samples.append((current_silence_start, i))
                 current_silence_start = None
+    
+    # Handle silence at the end of the file
+    if current_silence_start is not None:
+        silence_duration = len(audio_data) - current_silence_start
+        if silence_duration >= min_silence_len:
+            print('Silence at end of file')
+            silence_samples.append((current_silence_start, len(audio_data)))
+    
+    print(f"Found {len(silence_samples)} silence periods")
     return silence_samples
 
-def find_largest_silences(audio_data, num_silences):
-    sample_rate = 16000 # TODO: Get this from the audio file
-    silence_threshold = 500  # Adjust this threshold as needed
-    min_silence_len = sample_rate  # 1 second of silence
 
-    # audio_data = extract_audio_data(file_path)
-    silences = find_silences(audio_data, silence_threshold, min_silence_len)
+def get_sample_rate(audio_data):
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
+    temp_path = temp_file.name
+    try:
+        temp_file.write(audio_data)
+        temp_file.flush()
+        temp_file.close()  # Explicitly close the file handle
+
+        command = [
+            'ffprobe',
+            '-v', 'error',
+            '-select_streams', 'a:0',
+            '-show_entries', 'stream=sample_rate',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            temp_path
+        ]
+        
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            print(f"Warning: Could not get sample rate: {stderr.decode('utf-8')}")
+            return 16000  # fallback to default
+        
+        sample_rate = int(stdout.strip())
+        print(f"Sample rate: {sample_rate}")
+        return sample_rate
+    finally:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception as e:
+            print(f"Warning: Could not remove temporary file {temp_path}: {e}")
+
+def find_largest_silences(audio_data, num_silences, sample_rate, audiobook_path):
+    print(f"Using sample rate: {sample_rate} Hz")
     
-    # Calculate the duration of each silence period
+    # Adjust threshold - now working with normalized values between 0 and 1
+    silence_threshold = .05  # 1% of maximum amplitude
+    min_silence_len = int(sample_rate * 0.5)  # 0.5 seconds of silence
+    
+    print(f"Silence threshold: {silence_threshold}")
+    print(f"Minimum silence length: {min_silence_len} samples")
+    
+    # silences = find_silences(audio_data, silence_threshold, min_silence_len)
+    silences = detect_silences(audiobook_path)
+    
+    # if not silences:
+    #     print("No silences found, trying with higher threshold...")
+    #     silence_threshold = 0.02  # Try 2%
+    #     silences = find_silences(audio_data, silence_threshold, min_silence_len)
+    
+    # Rest of the function remains the same
     silence_durations = [(start, end, end - start) for start, end in silences]
-    
-    # Sort by duration and get the X largest periods of silence
     largest_silences = sorted(silence_durations, key=lambda x: x[2], reverse=True)[:num_silences]
-
-    # Sort the largest silences chronologically
     largest_silences = sorted(largest_silences, key=lambda x: x[0])
-    
-    # Convert sample indices to timestamps
-    # largest_silences = [(str(timedelta(seconds=start / sample_rate)), str(timedelta(seconds=end / sample_rate))) for start, end, _ in largest_silences]
-    largest_silences = [(str(timedelta(seconds=end / sample_rate))) for start, end, _ in largest_silences]
+    largest_silences = [(str(timedelta(seconds=end))) for start, end, _ in largest_silences]
     
     return largest_silences
 
@@ -137,13 +281,42 @@ def generate_clip(input_file, timestamp, output_file):
     command = [
         'ffmpeg', '-y', '-i', input_file, '-ss', timestamp, '-t', '10', output_file
     ]
-    subprocess.run(command)
+    try:
+        process = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating clip: {e.stderr}")
+        raise
 
 def parse_timestamp(timestamp):
     # hours, minutes, seconds = map(float, timestamp.split(':'))
     # return timedelta(hours=hours, minutes=minutes, seconds=seconds)
     seconds = float(timestamp)
     return timedelta(seconds=seconds)
+
+def parse_timestamp_from_hhmmssxx(timestamp):
+    """Parse timestamp in format HH:MM:SS.xxxxx"""
+    try:
+        # Split into parts
+        time_parts = timestamp.split(':')
+        if len(time_parts) == 3:
+            hours = float(time_parts[0])
+            minutes = float(time_parts[1])
+            seconds = float(time_parts[2])
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            return timedelta(seconds=total_seconds)
+    except Exception as e:
+        print(f"Error parsing timestamp {timestamp}: {e}")
+        # Try parsing as raw seconds as fallback
+        try:
+            return timedelta(seconds=float(timestamp))
+        except:
+            print(f"Could not parse timestamp as seconds either")
+            return timedelta(seconds=0)
 
 def construct_metadata(chapters, title, author, total_length_placeholder):
     metadata = ";FFMETADATA1\n"
@@ -254,15 +427,15 @@ if __name__ == "__main__":
     os.makedirs(clips_folder, exist_ok=True)
     
     timestamps = []
-    with open(chapters_file_path, "r", encoding="utf-8") as file:
-        chapters_text = file.read()
-        for i, (end) in enumerate(largest_silences, 1):
-            output_file = os.path.join(clips_folder, f"clip_{i}.mp3")
-            generate_clip(audio_file_path, end, output_file)
-            contains_chapter, chapter = query_gemini(output_file, chapters_text)
-            if contains_chapter:
-                print(f"Chapter found: {chapter} ({end})")
-                timestamps.append((chapter, end))
+    # with open(chapters_file_path, "r", encoding="utf-8") as file:
+    #     chapters_text = file.read()
+    #     for i, (end) in enumerate(largest_silences, 1):
+    #         output_file = os.path.join(clips_folder, f"clip_{i}.mp3")
+    #         generate_clip(audio_file_path, end, output_file)
+    #         contains_chapter, chapter = query_gemini(output_file, chapters_text)
+    #         if contains_chapter:
+    #             print(f"Chapter found: {chapter} ({end})")
+    #             timestamps.append((chapter, end))
     
     # Write the chapters to a file
     construct_metadata(timestamps, 'output.txt', get_audio_length(audio_file_path))

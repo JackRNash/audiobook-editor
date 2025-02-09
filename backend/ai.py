@@ -11,7 +11,7 @@ class AI:
     def has_api_key(self):
         return self.api_key is not None
     
-    def parse_gemini_response(response):
+    def parse_gemini_response(self, response):
         response_json = json.loads(response)
         contains_chapter = response_json.get('containsChapter')
         chapter = response_json.get('chapter')
@@ -19,6 +19,7 @@ class AI:
 
     def query_gemini(self, clip_path, chapters):
         clip = genai.upload_file(path=clip_path)
+        toc_text = "\n".join(chapters)
 
         # Create the model
         generation_config = {
@@ -48,6 +49,6 @@ class AI:
             system_instruction="I will give you an audio snippet and a list of possible chapter titles. You respond in json tell me if one of those chapters is present in the audio clip and if so, which one",
             )
         
-        response = model.generate_content([chapters, clip])
+        response = model.generate_content([toc_text, clip])
 
         return self.parse_gemini_response(response.text)
