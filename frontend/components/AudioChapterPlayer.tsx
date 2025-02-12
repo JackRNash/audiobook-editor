@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import AudioPlayer from "./AudioPlayer";
 import ChapterMarks from "./ChapterMarks";
-import { Upload, Wand2, Download } from "lucide-react";
+import { Loader2, Upload, Wand2, Download } from "lucide-react";
 import { chapterClient, type Chapter } from "@/lib/chapter-client";
 import AudiobookMetadata from "./AudiobookMetadata";
 import TextInputModal from "./TextInputModal";
@@ -268,7 +268,11 @@ export default function AudioChapterPlayer() {
           className="bg-purple-600 hover:bg-purple-700"
           disabled={isLoading || !audioSrc}
         >
-          <Wand2 className="w-5 h-5 mr-2" />
+          {isLoading ? (
+            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+          ) : (
+            <Wand2 className="w-5 h-5 mr-2" />
+          )}
           Generate Chapters
         </Button>
       </div>
@@ -306,7 +310,11 @@ export default function AudioChapterPlayer() {
             className="w-full bg-green-600 hover:bg-green-700"
             disabled={isLoading || chapters.length === 0}
           >
-            <Download className="w-5 h-5 mr-2" />
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-5 h-5 mr-2" />
+            )}
             Export Chapters
           </Button>
         </div>
