@@ -13,6 +13,13 @@ from tqdm import tqdm
 import google.generativeai as genai
 from google.ai.generativelanguage_v1beta.types import content
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+
+logger = logging.getLogger(__name__)
 
 def extract_audio_data(file_path):
     command = [
@@ -140,7 +147,7 @@ def detect_silences(audio_path: str, noise_threshold_db: float = -60, min_silenc
         )
         _, stderr = process.communicate()
     except subprocess.CalledProcessError as e:
-        print(f"Error running ffmpeg: {e.stderr}")
+        logger.error(f"Error running ffmpeg: {e.stderr}")
         raise
     
     # Parse the output to find silence start and end times
@@ -159,8 +166,8 @@ def detect_silences(audio_path: str, noise_threshold_db: float = -60, min_silenc
     # Pair up the starts and ends
     silence_periods = list(zip(starts, ends))
 
-    print(f"Found {len(silence_periods)} silence periods")
-    print(f"First 10: {silence_periods[:10]}")
+    logger.info(f"Found {len(silence_periods)} silence periods")
+    logger.info(f"First 10: {silence_periods[:10]}")
     
     return silence_periods
 
@@ -168,16 +175,16 @@ def find_silences(audio_data, silence_threshold, min_silence_len):
     # Ensure the buffer size is a multiple of 2 (16 bits = 2 bytes)
     buffer_length = len(audio_data)
     if buffer_length % 2 != 0:
-        print(f"Warning: Truncating buffer from {buffer_length} to {buffer_length - 1} bytes")
+        logger.info(f"Warning: Truncating buffer from {buffer_length} to {buffer_length - 1} bytes")
         audio_data = audio_data[:-1]
     
     # Convert bytes to numpy array
     try:
         audio_array = np.frombuffer(audio_data, dtype=np.int16)
-        print(f"Converted {len(audio_data)} bytes to {len(audio_array)} samples")
+        logger.info(f"Converted {len(audio_data)} bytes to {len(audio_array)} samples")
     except ValueError as e:
-        print(f"Error converting audio data: {e}")
-        print(f"Audio data length: {len(audio_data)} bytes")
+        logger.error(f"Error converting audio data: {e}")
+        logger.error(f"Audio data length: {len(audio_data)} bytes")
         raise
 
     # Normalize audio data to float between -1 and 1
@@ -202,7 +209,7 @@ def find_silences(audio_data, silence_threshold, min_silence_len):
             if current_silence_start is not None:
                 silence_duration = i - current_silence_start
                 if ((i - current_silence_start) // chunk_size) >= min_chunk_silence_len:
-                    print(f"Silence from {current_silence_start} to {i}")
+                    logger.info(f"Silence from {current_silence_start} to {i}")
                     silence_samples.append((current_silence_start, i))
                 current_silence_start = None
     
@@ -210,10 +217,10 @@ def find_silences(audio_data, silence_threshold, min_silence_len):
     if current_silence_start is not None:
         silence_duration = len(audio_data) - current_silence_start
         if silence_duration >= min_silence_len:
-            print('Silence at end of file')
+            logger.info('Silence at end of file')
             silence_samples.append((current_silence_start, len(audio_data)))
     
-    print(f"Found {len(silence_samples)} silence periods")
+    logger.info(f"Found {len(silence_samples)} silence periods")
     return silence_samples
 
 
@@ -238,34 +245,34 @@ def get_sample_rate(audio_data):
         stdout, stderr = process.communicate()
         
         if process.returncode != 0:
-            print(f"Warning: Could not get sample rate: {stderr.decode('utf-8')}")
+            logger.warning(f"Warning: Could not get sample rate: {stderr.decode('utf-8')}")
             return 16000  # fallback to default
         
         sample_rate = int(stdout.strip())
-        print(f"Sample rate: {sample_rate}")
+        logger.info(f"Sample rate: {sample_rate}")
         return sample_rate
     finally:
         try:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
         except Exception as e:
-            print(f"Warning: Could not remove temporary file {temp_path}: {e}")
+            logger.warning(f"Warning: Could not remove temporary file {temp_path}: {e}")
 
 def find_largest_silences(audio_data, num_silences, sample_rate, audiobook_path):
-    print(f"Using sample rate: {sample_rate} Hz")
+    logger.info(f"Using sample rate: {sample_rate} Hz")
     
     # Adjust threshold - now working with normalized values between 0 and 1
     silence_threshold = .05  # 1% of maximum amplitude
     min_silence_len = int(sample_rate * 0.5)  # 0.5 seconds of silence
     
-    print(f"Silence threshold: {silence_threshold}")
-    print(f"Minimum silence length: {min_silence_len} samples")
+    logger.info(f"Silence threshold: {silence_threshold}")
+    logger.info(f"Minimum silence length: {min_silence_len} samples")
     
     # silences = find_silences(audio_data, silence_threshold, min_silence_len)
     silences = detect_silences(audiobook_path)
     
     # if not silences:
-    #     print("No silences found, trying with higher threshold...")
+    #     logger.info("No silences found, trying with higher threshold...")
     #     silence_threshold = 0.02  # Try 2%
     #     silences = find_silences(audio_data, silence_threshold, min_silence_len)
     
@@ -289,7 +296,7 @@ def generate_clip(input_file, timestamp, output_file):
             check=True
         )
     except subprocess.CalledProcessError as e:
-        print(f"Error generating clip: {e.stderr}")
+        logger.error(f"Error generating clip: {e.stderr}")
         raise
 
 def parse_timestamp(timestamp):
@@ -310,12 +317,12 @@ def parse_timestamp_from_hhmmssxx(timestamp):
             total_seconds = hours * 3600 + minutes * 60 + seconds
             return timedelta(seconds=total_seconds)
     except Exception as e:
-        print(f"Error parsing timestamp {timestamp}: {e}")
+        logger.info(f"Error parsing timestamp {timestamp}: {e}")
         # Try parsing as raw seconds as fallback
         try:
             return timedelta(seconds=float(timestamp))
         except:
-            print(f"Could not parse timestamp as seconds either")
+            logger.info(f"Could not parse timestamp as seconds either")
             return timedelta(seconds=0)
 
 def construct_metadata(chapters, title, author, total_length_placeholder):
@@ -330,14 +337,16 @@ def construct_metadata(chapters, title, author, total_length_placeholder):
 
     return metadata
 
-def merge_metadata_with_audio(input_audio_stream, metadata_str, thumbnail_bytes=None):
+def merge_metadata_with_audio(input_audio_stream, metadata_str, suffix, thumbnail_bytes=None):
     # Thumbnail present?
     if thumbnail_bytes:
-        print('Thumbnail detected')
+        logger.info('Thumbnail detected')
     else:
-        print('No thumbnail detected')
+        logger.info('No thumbnail detected')
     
-    with tempfile.NamedTemporaryFile(delete=False) as audio_temp, tempfile.NamedTemporaryFile(delete=False) as metadata_temp, tempfile.NamedTemporaryFile(delete=False, suffix='.m4b') as output_temp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as audio_temp, \
+         tempfile.NamedTemporaryFile(delete=False) as metadata_temp, \
+         tempfile.NamedTemporaryFile(delete=False, suffix='.m4b') as output_temp:
         audio_temp.write(input_audio_stream)
         metadata_temp.write(metadata_str.encode('utf-8'))
         audio_temp.flush()
@@ -378,13 +387,26 @@ def merge_metadata_with_audio(input_audio_stream, metadata_str, thumbnail_bytes=
                 '-metadata:s:v', 'comment="Cover (front)"'
             ])
 
+        if suffix in ['.aac', '.m4a', '.m4b']:
+            logger.info('Using copy codec for AAC input')
+            command.extend(['-c:a', 'copy'])
+        else:
+            logger.info('Transcoding to AAC (this may take a while, ~1 min / hour of audio)')
+            command.extend([
+                '-c:a', 'aac',
+                '-b:a', '192k',
+            ])
+
+        # Image codec settings
+        if thumbnail_bytes:
+            command.extend(['-c:v', 'mjpeg'])
+
         # Output options
         command.extend([
-            '-c:a', 'copy',  # Copy audio codec
-            '-c:v', 'mjpeg' if thumbnail_bytes else 'copy',  # Use MJPEG for cover
+            # '-f', 'ipod',  # Force M4B container
             output_temp_path
         ])
-        
+
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
         
@@ -402,18 +424,31 @@ def merge_metadata_with_audio(input_audio_stream, metadata_str, thumbnail_bytes=
         if 'cover_temp_path' in locals():
             os.remove(cover_temp_path)
 
-def get_audio_length(file_bytes):
-    command = [
-        'ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', 'pipe:0'
-    ]
-    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, _ = process.communicate(input=file_bytes)
-    duration_seconds = float(stdout.strip())
-    return timedelta(seconds=duration_seconds)
+def get_audio_length(file_bytes, suffix):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        temp_path = temp_file.name
+        temp_file.write(file_bytes)
+        temp_file.flush()
+
+    try:
+        command = [
+            'ffprobe', 
+            '-v', 'error', 
+            '-i', temp_path,
+            '-show_entries', 'format=duration', 
+            '-of', 'default=noprint_wrappers=1:nokey=1', 
+        ]
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, _ = process.communicate(input=file_bytes)
+        duration_seconds = float(stdout.strip())
+        return timedelta(seconds=duration_seconds)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 if __name__ == "__main__":
     if len(sys.argv) != 4:
-        print("Usage: python identify.py <audio_file_path> <num_silences> <chapters_file_path>")
+        logger.info("Usage: python identify.py <audio_file_path> <num_silences> <chapters_file_path>")
         sys.exit(1)
     
     audio_file_path = sys.argv[1]
@@ -434,7 +469,7 @@ if __name__ == "__main__":
     #         generate_clip(audio_file_path, end, output_file)
     #         contains_chapter, chapter = query_gemini(output_file, chapters_text)
     #         if contains_chapter:
-    #             print(f"Chapter found: {chapter} ({end})")
+    #             logger.info(f"Chapter found: {chapter} ({end})")
     #             timestamps.append((chapter, end))
     
     # Write the chapters to a file

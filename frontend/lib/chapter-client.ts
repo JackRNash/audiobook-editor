@@ -97,7 +97,8 @@ class ChapterClient {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to export chapters');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to export chapters');
     }
 
     return await response.blob();
