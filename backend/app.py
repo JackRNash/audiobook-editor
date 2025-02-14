@@ -68,17 +68,20 @@ def detect_chapters():
 @app.route('/generateChapters', methods=['POST'])
 def generate_chapters():
     # Parse table of contents, audio file, and number of silences
-    if not all(key in ['tableOfContents', 'numSilences', 'sampleRate'] and key in request.form for key in ('tableOfContents', 'numSilences')) or 'audioFile' not in request.files:
-        return jsonify({"error": "tableOfContents, audioFile, sampleRate, and numSilences are required"}), 400
+    if not all(key in request.form for key in ('tableOfContents', 'numSilences', 'sampleRate', 'existingChapters')) or 'audioFile' not in request.files:
+        return jsonify({"error": "tableOfContents, audioFile, sampleRate, existingChapters, and numSilences are required"}), 400
     
     audio_file = request.files['audioFile']
     audio_bytes = audio_file.read()
     num_silences = int(request.form['numSilences'])
     table_of_contents = json.loads(request.form['tableOfContents'])
     sample_rate = int(request.form['sampleRate'])
+    existing_chapters = json.loads(request.form['existingChapters'])
+    num_existing = len(existing_chapters)
 
     logger.info(f'Sample rate: {sample_rate}')
     logger.info(f'Number of silences: {num_silences}')
+    logger.info(f'Number of existing chapters: {num_existing}')
     file_extension = os.path.splitext(audio_file.filename)[1]
 
     # make temporary file
@@ -87,7 +90,7 @@ def generate_chapters():
         audiobook_file.write(audio_bytes)
     try:
         # Add some extra silences to account for potential missed silences
-        largest_silences = parser.find_largest_silences(audio_bytes, num_silences + 8, sample_rate, audiobook_path)
+        largest_silences = parser.find_largest_silences(audio_bytes, num_silences, num_existing, sample_rate, audiobook_path)
         logger.info(f"Found {len(largest_silences)} largest silences")
 
 
@@ -105,12 +108,12 @@ def generate_chapters():
         for i, (end) in enumerate(largest_silences, 1):
             if ai is None:
                 chapters.append({
-                        'id': str(chapter_index),
-                        'time': float(parser.parse_timestamp_from_hhmmssxx(end).total_seconds()), 
-                        'title': f'Chapter {chapter_index}'
-                    })
+                    'id': str(chapter_index),
+                    'time': float(parser.parse_timestamp_from_hhmmssxx(end).total_seconds()), 
+                    'title': f'Chapter {chapter_index}'
+                })
             else:
-                parser.generate_clip(audiobook_path, end, clip_path)  # Overwrite the same file
+                parser.generate_clip(audiobook_path, end, clip_path)
                 contains_chapter, chapter = ai.query_gemini(clip_path, table_of_contents)
                 if contains_chapter:
                     logger.info(f"Chapter found: {chapter} ({end})")
@@ -124,8 +127,16 @@ def generate_chapters():
         # Clean up the temporary file
         os.remove(audiobook_path)
 
-    logger.info(f"Chapters: {chapters}")
-    return jsonify(chapters), 200
+    # Combine existing chapters with new chapters
+    all_chapters = existing_chapters + chapters
+    # sort by time ascending
+    all_chapters = sorted(all_chapters, key=lambda x: x['time'])
+    # reindex chapters
+    for i, chapter in enumerate(all_chapters):
+        chapter['id'] = str(i + 1)
+
+    logger.info(f"Total chapters: {len(all_chapters)}")
+    return jsonify(all_chapters), 200
 
 @app.route('/exportChapters', methods=['POST'])
 def export_chapters():

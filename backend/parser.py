@@ -258,7 +258,7 @@ def get_sample_rate(audio_data):
         except Exception as e:
             logger.warning(f"Warning: Could not remove temporary file {temp_path}: {e}")
 
-def find_largest_silences(audio_data, num_silences, sample_rate, audiobook_path):
+def find_largest_silences(audio_data, num_silences, num_existing, sample_rate, audiobook_path):
     logger.info(f"Using sample rate: {sample_rate} Hz")
     
     # Adjust threshold - now working with normalized values between 0 and 1
@@ -268,18 +268,17 @@ def find_largest_silences(audio_data, num_silences, sample_rate, audiobook_path)
     logger.info(f"Silence threshold: {silence_threshold}")
     logger.info(f"Minimum silence length: {min_silence_len} samples")
     
-    # silences = find_silences(audio_data, silence_threshold, min_silence_len)
     silences = detect_silences(audiobook_path)
     
-    # if not silences:
-    #     logger.info("No silences found, trying with higher threshold...")
-    #     silence_threshold = 0.02  # Try 2%
-    #     silences = find_silences(audio_data, silence_threshold, min_silence_len)
-    
-    # Rest of the function remains the same
+    # Calculate silence durations and sort by duration
     silence_durations = [(start, end, end - start) for start, end in silences]
-    largest_silences = sorted(silence_durations, key=lambda x: x[2], reverse=True)[:num_silences]
-    largest_silences = sorted(largest_silences, key=lambda x: x[0])
+    sorted_silences = sorted(silence_durations, key=lambda x: x[2], reverse=True)
+    
+    # Skip num_existing and take the next num_silences
+    selected_silences = sorted_silences[num_existing:num_existing + num_silences]
+    
+    # Sort by position in audio and convert to timedelta strings
+    largest_silences = sorted(selected_silences, key=lambda x: x[0])
     largest_silences = [(str(timedelta(seconds=end))) for start, end, _ in largest_silences]
     
     return largest_silences

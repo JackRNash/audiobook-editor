@@ -72,7 +72,7 @@ export default function AudioChapterPlayer() {
     }
   };
 
-  const handleTextSubmit = async (text: string) => {
+  const handleTextSubmit = async (text: string, numSilences: number) => {
     if (audioSrc) {
       setIsLoading(true);
       try {
@@ -80,17 +80,14 @@ export default function AudioChapterPlayer() {
         const audioFile = new File([file], "audiobook.mp3", {
           type: "audio/mpeg",
         });
-        const numChapters = text
-          .split("\n")
-          .filter((line) => line.trim()).length;
-        console.log("Chapters: ", numChapters);
         const sampleRate = await getSampleRate(audioRef);
 
         const newChapters = await chapterClient.generateChapters(
           text,
           audioFile,
-          numChapters,
-          sampleRate
+          numSilences,
+          sampleRate,
+          chapters
         );
         setChapters(newChapters);
         setCurrentChapter(newChapters[0]);

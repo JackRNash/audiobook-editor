@@ -34,12 +34,19 @@ class ChapterClient {
     };
   }
 
-  async generateChapters(text: string, audioFile: File, numSilences: number, sampleRate: number): Promise<Chapter[]> {
+  async generateChapters(
+    text: string,
+    audioFile: File,
+    numSilences: number,
+    sampleRate: number,
+    existingChapters: Chapter[]
+  ): Promise<Chapter[]> {
     const formData = new FormData();
     formData.append('tableOfContents', JSON.stringify(text.split('\n').filter(line => line.trim())));
     formData.append('audioFile', audioFile);
     formData.append('numSilences', numSilences.toString());
     formData.append('sampleRate', sampleRate.toString());
+    formData.append('existingChapters', JSON.stringify(existingChapters));
 
     // if 0 silences, throw an error
     if (numSilences === 0) {
@@ -54,6 +61,7 @@ class ChapterClient {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Error in generateChapters:', errorData);
         throw new Error(errorData.error || 'Failed to generate chapters');
       }
 

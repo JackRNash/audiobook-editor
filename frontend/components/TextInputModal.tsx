@@ -6,12 +6,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useState, useEffect } from "react";
 
 interface TextInputModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, numSilences: number) => void;
 }
 
 export default function TextInputModal({
@@ -20,9 +22,17 @@ export default function TextInputModal({
   onSubmit,
 }: TextInputModalProps) {
   const [text, setText] = useState("");
+  const [numSilences, setNumSilences] = useState(1);
+
+  useEffect(() => {
+    // Count non-empty lines in text
+    const lineCount = text.split('\n').filter(line => line.trim()).length;
+    // Add buffer for potential missed silences
+    setNumSilences(lineCount + 8);
+  }, [text]);
 
   const handleSubmit = () => {
-    onSubmit(text);
+    onSubmit(text, numSilences);
     setText("");
     onClose();
   };
@@ -40,6 +50,19 @@ export default function TextInputModal({
             onChange={(e) => setText(e.target.value)}
             className="min-h-[300px] p-4 bg-gray-700 text-white placeholder:text-gray-400 border-gray-600 focus:border-purple-500"
           />
+          <div className="flex items-center space-x-4">
+            <Label htmlFor="silences" className="text-white whitespace-nowrap">
+              Number of silences to scan:
+            </Label>
+            <Input
+              id="silences"
+              type="number"
+              min={1}
+              value={numSilences}
+              onChange={(e) => setNumSilences(parseInt(e.target.value))}
+              className="w-24 bg-gray-700 text-white border-gray-600 focus:border-purple-500"
+            />
+          </div>
           <div className="flex justify-end space-x-2">
             <Button
               variant="outline"

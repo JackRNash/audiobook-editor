@@ -11,10 +11,16 @@ class AI:
     def has_api_key(self):
         return self.api_key is not None
     
-    def parse_gemini_response(self, response):
+    def parse_gemini_response(self, response, chapters):
         response_json = json.loads(response)
         contains_chapter = response_json.get('containsChapter')
         chapter = response_json.get('chapter')
+
+        if contains_chapter and chapter not in chapters:
+            # TODO: log warning
+            print(f"Warning: Chapter '{chapter}' not found in the provided chapters list.")
+            return False, None  
+
         return contains_chapter, chapter
 
     def query_gemini(self, clip_path, chapters):
@@ -51,4 +57,4 @@ class AI:
         
         response = model.generate_content([toc_text, clip])
 
-        return self.parse_gemini_response(response.text)
+        return self.parse_gemini_response(response.text, chapters)
