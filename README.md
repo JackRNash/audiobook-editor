@@ -8,7 +8,7 @@ I needed a way to add chapter markings to old audiobook files that did not have 
 After a couple different attempts on how to generate the chapter timestamps, I landed on the method described below which works fairly well. 
 
 ### How to use
-0. To build from source: `docker compose up --build` and navigate to 
+0. To build from source: `docker compose up --build` and navigate to localhost:3000
 1. Upload an mp3/m4b file
 2. Any existing chapters, title, author, and cover art will be loaded and may be modified
 3. Press "Generate chapters"
